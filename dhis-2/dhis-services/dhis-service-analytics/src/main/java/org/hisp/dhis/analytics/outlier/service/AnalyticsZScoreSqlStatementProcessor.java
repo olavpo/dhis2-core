@@ -46,6 +46,7 @@ import org.hisp.dhis.analytics.outlier.OutlierHelper;
 import org.hisp.dhis.analytics.outlier.OutlierSqlStatementProcessor;
 import org.hisp.dhis.analytics.outlier.data.DataDimension;
 import org.hisp.dhis.analytics.outlier.data.OutlierRequest;
+import org.hisp.dhis.analytics.table.OutlierStatsTableManager;
 import org.hisp.dhis.category.CategoryOptionCombo;
 import org.hisp.dhis.commons.util.TextUtils;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -117,10 +118,10 @@ public class AnalyticsZScoreSqlStatementProcessor implements OutlierSqlStatement
     for (int i = 0; i < request.getDataDimensions().size(); i++) {
       sqlParameterSource.addValue(
           DATA_ELEMENT_ID.getKey() + i,
-          request.getDataDimensions().get(i).getDataElement().getId());
+          request.getDataDimensions().get(i).getDataElement().getUid());
       CategoryOptionCombo coc = request.getDataDimensions().get(i).getCategoryOptionCombo();
       if (coc != null) {
-        sqlParameterSource.addValue(CATEGORY_OPTION_COMBO_ID.getKey() + i, coc.getId());
+        sqlParameterSource.addValue(CATEGORY_OPTION_COMBO_ID.getKey() + i, coc.getUid());
       }
     }
 
@@ -151,11 +152,11 @@ public class AnalyticsZScoreSqlStatementProcessor implements OutlierSqlStatement
       return EMPTY;
     }
 
-    String ouPathClause = OutlierHelper.getOrgUnitPathClause(request.getOrgUnits(), "ax", "and");
+    String ouClause = OutlierHelper.getOrgUnitLevelClause(request.getOrgUnits(), "ax", "and");
 
     boolean modifiedZ = request.getAlgorithm() == MODIFIED_Z_SCORE;
 
-    String middleValue = modifiedZ ? " ax.percentile_middle_value" : " ax.avg_middle_value";
+    String middleValue = modifiedZ ? " s.median" : " s.mean";
 
     String order =
         request.getOrderBy() == ABS_DEV
@@ -192,59 +193,65 @@ public class AnalyticsZScoreSqlStatementProcessor implements OutlierSqlStatement
             + "ax.ao as aoc_uid, "
             + "ax.value, "
             + "ax.pestartdate as pe_start_date, "
-            + "ax.petype as pt_name, "
+            + "ax.pe, "
             + middleValue
             + " as middle_value, "
-            + "ax.std_dev, "
-            + "ax.mad, "
-            + "abs(ax.value::double precision - "
+            + "s.std_dev, "
+            + "s.mad, "
+            + "abs(ax.value - "
             + middleValue
             + ") as middle_value_abs_dev, ";
     if (modifiedZ) {
       sql +=
-          "(case when ax.mad = 0 then 0 "
+          "(case when s.mad = 0 then 0 "
               + "      else "
               + scoreScalingFactor
-              + " * abs(ax.value::double precision - "
+              + " * abs(ax.value - "
               + middleValue
-              + " ) / ax.mad "
+              + " ) / s.mad "
               + "       end) as z_score, ";
     } else {
       sql +=
-          "(case when ax.std_dev = 0 then 0 "
-              + "      else abs(ax.value::double precision - "
+          "(case when s.std_dev = 0 then 0 "
+              + "      else abs(ax.value - "
               + middleValue
-              + " ) / ax.std_dev "
+              + " ) / s.std_dev "
               + "       end) as z_score, ";
     }
     sql +=
         modifiedZ
             ? middleValue
-                + " - (ax.mad * "
+                + " - (s.mad * "
                 + thresholdParam
                 + "/"
                 + scoreScalingFactor
                 + ") as lower_bound, "
                 + middleValue
-                + " + (ax.mad * "
+                + " + (s.mad * "
                 + thresholdParam
                 + "/"
                 + scoreScalingFactor
                 + ") as upper_bound "
             : middleValue
-                + " - (ax.std_dev * "
+                + " - (s.std_dev * "
                 + thresholdParam
                 + ") as lower_bound, "
                 + middleValue
-                + " + (ax.std_dev * "
+                + " + (s.std_dev * "
                 + thresholdParam
                 + ") as upper_bound ";
     sql +=
         "from analytics ax "
+            + "inner join "
+            + OutlierStatsTableManager.TABLE_NAME
+            + " s on ax.dx = s.dx and ax.ou = s.ou and ax.co = s.co and ax.ao = s.ao "
             + "where "
-            + getDataDimensionSql(withParams, request.getDataDimensions())
+            + getDataDimensionSql(withParams, request.getDataDimensions(), "ax")
+            + " and "
+            // Filter the statistics table on the same data dimensions before the join
+            + getDataDimensionSql(withParams, request.getDataDimensions(), "s")
             + " "
-            + ouPathClause
+            + ouClause
             + getPeriodSqlSnippet(request, withParams)
             + ") t1 "
             + "where t1.z_score > "
@@ -267,16 +274,21 @@ public class AnalyticsZScoreSqlStatementProcessor implements OutlierSqlStatement
    * @param dataDimensions the list of {@link DataDimension}.
    * @return the sql form of the data dimension objects
    */
-  private String getDataDimensionSql(boolean withParams, List<DataDimension> dataDimensions) {
+  private String getDataDimensionSql(
+      boolean withParams, List<DataDimension> dataDimensions, String alias) {
     StringBuilder sql = new StringBuilder("(");
 
     if (withParams) {
       for (int i = 0; i < dataDimensions.size(); i++) {
-        sql.append(i == 0 ? "(ax.dataelementid = :" : " or (ax.dataelementid = :")
+        sql.append(i == 0 ? "(" : " or (")
+            .append(alias)
+            .append(".dx = :")
             .append(DATA_ELEMENT_ID.getKey())
             .append(i);
         if (dataDimensions.get(i).getCategoryOptionCombo() != null) {
-          sql.append(" and ax.categoryoptioncomboid = :")
+          sql.append(" and ")
+              .append(alias)
+              .append(".co = :")
               .append(CATEGORY_OPTION_COMBO_ID.getKey())
               .append(i);
         }
@@ -287,9 +299,9 @@ public class AnalyticsZScoreSqlStatementProcessor implements OutlierSqlStatement
           dataDimensions.stream()
               .map(
                   dd -> {
-                    String s = "(ax.dataelementid = " + dd.getDataElement().getId();
+                    String s = "(" + alias + ".dx = '" + dd.getDataElement().getUid() + "'";
                     if (dd.getCategoryOptionCombo() != null) {
-                      s += " and ax.categoryoptioncomboid = " + dd.getCategoryOptionCombo().getId();
+                      s += " and " + alias + ".co = '" + dd.getCategoryOptionCombo().getUid() + "'";
                     }
                     s += ")";
 

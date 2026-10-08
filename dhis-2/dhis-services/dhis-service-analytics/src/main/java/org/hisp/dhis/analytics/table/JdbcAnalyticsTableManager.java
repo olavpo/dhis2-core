@@ -479,10 +479,6 @@ public class JdbcAnalyticsTableManager extends AbstractJdbcTableManager {
                 "valueExpression", valueExpression,
                 "textValueExpression", textValueExpression)));
 
-    if (!params.isSkipOutliers()) {
-      sql.append(getOutliersJoinStatement());
-    }
-
     sql.append(
         replace(
             """
@@ -630,10 +626,6 @@ public class JdbcAnalyticsTableManager extends AbstractJdbcTableManager {
     columns.addAll(getOrganisationUnitLevelColumns());
     columns.addAll(getPeriodTypeColumns("ps"));
 
-    if (!params.isSkipOutliers()) {
-      columns.addAll(getOutlierStatsColumns());
-    }
-
     columns.addAll(getFactColumns());
 
     return filterDimensionColumns(columns);
@@ -683,96 +675,6 @@ public class JdbcAnalyticsTableManager extends AbstractJdbcTableManager {
             .valueType(FACT)
             .skipIndex(Skip.SKIP)
             .selectExpression("textvalue")
-            .build());
-  }
-
-  /**
-   * Statistical outlier detection involves applying statistical tests or procedures to identify
-   * extreme values. The extreme data are converted into z scores that tell us how many standard
-   * deviations away they are from the mean. If a value has a high enough or low enough z score, it
-   * can be considered an outlier. Z scores can be affected by unusually large or small data values,
-   * which is why a more robust way to detect outliers can be used (a modified z-score).
-   *
-   * <p>Z-Score (xi – μ) / σ where: xi: A single data value μ: The mean of the dataset σ: The
-   * standard deviation of the dataset
-   *
-   * <p>Modified z-score = 0.6745(xi – x̃) / MAD where: xi: A single data value x̃: The median of
-   * the dataset MAD: The median absolute deviation of the dataset 0.6745: conversion factor (0.75
-   * percentiles)
-   *
-   * @return collection of analytics table columns dedicated to outlier identification.
-   */
-  private List<AnalyticsTableColumn> getOutlierStatsColumns() {
-    return List.of(
-
-        // TODO: Do not export IDs into analytics. We work only with UIDs.
-        AnalyticsTableColumn.builder()
-            .name("sourceid")
-            .dataType(INTEGER)
-            .nullable(NOT_NULL)
-            .selectExpression("dv.sourceid")
-            .build(),
-        AnalyticsTableColumn.builder()
-            .name("periodid")
-            .dataType(INTEGER)
-            .nullable(NOT_NULL)
-            .selectExpression("dv.periodid")
-            .build(),
-        AnalyticsTableColumn.builder()
-            .name("categoryoptioncomboid")
-            .dataType(INTEGER)
-            .nullable(NOT_NULL)
-            .selectExpression("dv.categoryoptioncomboid")
-            .build(),
-        AnalyticsTableColumn.builder()
-            .name("attributeoptioncomboid")
-            .dataType(INTEGER)
-            .nullable(NOT_NULL)
-            .selectExpression("dv.attributeoptioncomboid")
-            .build(),
-        AnalyticsTableColumn.builder()
-            .name("dataelementid")
-            .dataType(INTEGER)
-            .nullable(NOT_NULL)
-            .selectExpression("dv.dataelementid")
-            .build(),
-        AnalyticsTableColumn.builder()
-            .name("petype")
-            .dataType(VARCHAR_255)
-            .selectExpression("ps.periodtypename")
-            .build(),
-        AnalyticsTableColumn.builder()
-            .name("path")
-            .dataType(VARCHAR_255)
-            .selectExpression("ous.path")
-            .build(),
-        // mean
-        AnalyticsTableColumn.builder()
-            .name("avg_middle_value")
-            .dataType(DOUBLE)
-            .skipIndex(Skip.SKIP)
-            .selectExpression("stats.avg_middle_value")
-            .build(),
-        // median
-        AnalyticsTableColumn.builder()
-            .name("percentile_middle_value")
-            .dataType(DOUBLE)
-            .skipIndex(Skip.SKIP)
-            .selectExpression("stats.percentile_middle_value")
-            .build(),
-        // median of absolute deviations "MAD"
-        AnalyticsTableColumn.builder()
-            .name("mad")
-            .dataType(DOUBLE)
-            .skipIndex(Skip.SKIP)
-            .selectExpression("stats.mad")
-            .build(),
-        // standard deviation
-        AnalyticsTableColumn.builder()
-            .name("std_dev")
-            .dataType(DOUBLE)
-            .skipIndex(Skip.SKIP)
-            .selectExpression("stats.std_dev")
             .build());
   }
 
@@ -839,85 +741,5 @@ public class JdbcAnalyticsTableManager extends AbstractJdbcTableManager {
     } else {
       return setting && levels;
     }
-  }
-
-  /**
-   * The outlier identification is using z-score and modified z-score. The function is retrieving
-   * the sql statement for analytics table population (analytics and its partitions).
-   *
-   * @return sql statement fraction of statistic basic values for the outlier identification.
-   */
-  String getOutliersJoinStatement() {
-    // Outlier stats are only meaningful for numeric data elements; text/date/boolean values
-    // (e.g. LONG_TEXT) must never be fed into the double precision stats below.
-    String numericValueTypes =
-        quotedCommaDelimitedString(ObjectUtils.asStringList(ValueType.NUMERIC_TYPES));
-    // spotless:off
-    return "left join (select t3.dataelementid, t3.sourceid, t3.categoryoptioncomboid, t3.attributeoptioncomboid, " +
-        // median of absolute deviations "mad" (median(xi - median(xi)))
-        "percentile_cont(0.5) " +
-        "within group (order by abs(t3.value::double precision - t3.percentile_middle_value)) as MAD, " +
-        // mean
-        "avg(t3.value::double precision) as avg_middle_value, " +
-        // median of the samples (median(xi))
-        "percentile_cont(0.5) " +
-        "within group (order by t3.value::double precision) as percentile_middle_value, " +
-        // standard deviation of the normal distribution
-        "stddev_pop(t3.value::double precision) as std_dev " +
-        // Table "t3" is the composition of the tables "t2" (median of xi) and "t3" (values xi).
-        // For Z-Score the mean (avg_middle_value) and standard deviation (std_dev) is used ((xi -
-        // mean(x))/std_dev).
-        // For modified Z-Score the median (percentile_middle_value) and the median of absolute
-        // deviations (mad) is used (0.6745*(xi - median(x)/mad)).
-        // The factor 0.6745 is the 0.75 quartile of the normal distribution, to which the "mad"
-        // converges to.
-        "from (select t1.dataelementid, " +
-        "t1.sourceid, t1.categoryoptioncomboid, t1.attributeoptioncomboid, " +
-        "t1.percentile_middle_value, t2.value " +
-        // Table "t1" retrieving the median of all data element (dataelementid) values belongs to
-        // the same organisation (sourceid)
-        // coc and aoc.
-        "from (select dv1.dataelementid as dataelementid, dv1.sourceid as sourceid, " +
-        "dv1.categoryoptioncomboid as categoryoptioncomboid, dv1.attributeoptioncomboid as attributeoptioncomboid, " +
-        // median
-        "percentile_cont(0.5) " +
-        "within group (order by dv1.value::double precision) as percentile_middle_value " +
-        "from datavalue dv1 " +
-        "inner join dataelement de1 on dv1.dataelementid = de1.dataelementid " +
-        // Only numeric data elements with a parseable numeric value can be used for stats
-        // calculation; text-typed values (e.g. LONG_TEXT) must be excluded regardless of
-        // whether their content happens to look numeric.
-        "where de1.valuetype in (" + numericValueTypes + ") " +
-        "and dv1.value ~ " + NUMERIC_REGEXP + " " +
-        "group by dv1.dataelementid, dv1.sourceid, dv1.categoryoptioncomboid, " +
-        "dv1.attributeoptioncomboid) t1 " +
-        "join " +
-        // Table "t2" is the complement of the t1 table. It contains all values belong to the
-        // specific median (see t1).
-        // To "group by" criteria is added the time dimension (periodid). This part of the query has
-        // to be verified (maybe add TE to aggregation criteria).
-        "(select dv1.dataelementid as dataelementid, dv1.sourceid as sourceid, " +
-        "dv1.categoryoptioncomboid  as categoryoptioncomboid, " +
-        "dv1.attributeoptioncomboid as attributeoptioncomboid, " +
-        "dv1.value, dv1.periodid " +
-        "from datavalue dv1 " +
-        "inner join dataelement de1 on dv1.dataelementid = de1.dataelementid " +
-        // Only numeric data elements with a parseable numeric value can be used for stats
-        // calculation; text-typed values (e.g. LONG_TEXT) must be excluded regardless of
-        // whether their content happens to look numeric.
-        "where de1.valuetype in (" + numericValueTypes + ") " +
-        "and dv1.value ~ " + NUMERIC_REGEXP + " " +
-        "group by dv1.dataelementid, dv1.sourceid, dv1.categoryoptioncomboid, " +
-        "dv1.attributeoptioncomboid, dv1.value, dv1.periodid) t2 " +
-        "on t1.sourceid = t2.sourceid " +
-        "and t1.categoryoptioncomboid = t2.categoryoptioncomboid " +
-        "and t1.attributeoptioncomboid = t2.attributeoptioncomboid " +
-        "and t1.dataelementid = t2.dataelementid) as t3 " +
-        "group by t3.dataelementid, t3.sourceid, t3.categoryoptioncomboid, " +
-        "t3.attributeoptioncomboid) as stats " +
-        "on dv.dataelementid = stats.dataelementid and dv.sourceid = stats.sourceid and " +
-        "dv.categoryoptioncomboid = stats.categoryoptioncomboid and " +
-        "dv.attributeoptioncomboid = stats.attributeoptioncomboid ";
-    // spotless:on
   }
 }

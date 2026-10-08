@@ -99,7 +99,7 @@ class AnalyticsZscoreSqlStatementProcessorTest {
         .algorithm(Z_SCORE)
         .build();
     String sql = subject.getSqlStatement(builder.build());
-    assertTrue(sql.contains("avg_middle_value"));
+    assertTrue(sql.contains("s.mean as middle_value"));
   }
 
   @Test
@@ -113,7 +113,7 @@ class AnalyticsZscoreSqlStatementProcessorTest {
         .algorithm(MODIFIED_Z_SCORE)
         .build();
     String sql = subject.getSqlStatement(builder.build());
-    assertTrue(sql.contains("percentile_middle_value"));
+    assertTrue(sql.contains("s.median as middle_value"));
   }
 
   @Test
@@ -136,7 +136,7 @@ class AnalyticsZscoreSqlStatementProcessorTest {
         .build();
     String sql = subject.getSqlStatement(builder.build());
     String expected =
-        "select * from (select ax.dx as de_uid, ax.ou as ou_uid, ax.co as coc_uid, ax.ao as aoc_uid, ax.value, ax.pestartdate as pe_start_date, ax.petype as pt_name,  ax.avg_middle_value as middle_value, ax.std_dev, ax.mad, abs(ax.value::double precision -  ax.avg_middle_value) as middle_value_abs_dev, (case when ax.std_dev = 0 then 0       else abs(ax.value::double precision -  ax.avg_middle_value ) / ax.std_dev        end) as z_score,  ax.avg_middle_value - (ax.std_dev * :threshold) as lower_bound,  ax.avg_middle_value + (ax.std_dev * :threshold) as upper_bound from analytics ax where ((ax.dataelementid = :data_element_id0 and ax.categoryoptioncomboid = :category_option_combo_id0) or (ax.dataelementid = :data_element_id1 and ax.categoryoptioncomboid = :category_option_combo_id1) or (ax.dataelementid = :data_element_id2 and ax.categoryoptioncomboid = :category_option_combo_id2)) and (ax.\"path\" like '/ouabcdefghA%' or ax.\"path\" like '/ouabcdefghB%') and ( ax.pestartdate >= :start_date0 and ax.peenddate <= :end_date0 )) t1 where t1.z_score > :threshold order by middle_value_abs_dev desc limit :max_results ";
+        "select * from (select ax.dx as de_uid, ax.ou as ou_uid, ax.co as coc_uid, ax.ao as aoc_uid, ax.value, ax.pestartdate as pe_start_date, ax.pe,  s.mean as middle_value, s.std_dev, s.mad, abs(ax.value -  s.mean) as middle_value_abs_dev, (case when s.std_dev = 0 then 0       else abs(ax.value -  s.mean ) / s.std_dev        end) as z_score,  s.mean - (s.std_dev * :threshold) as lower_bound,  s.mean + (s.std_dev * :threshold) as upper_bound from analytics ax inner join analytics_outlier_stats s on ax.dx = s.dx and ax.ou = s.ou and ax.co = s.co and ax.ao = s.ao where ((ax.dx = :data_element_id0 and ax.co = :category_option_combo_id0) or (ax.dx = :data_element_id1 and ax.co = :category_option_combo_id1) or (ax.dx = :data_element_id2 and ax.co = :category_option_combo_id2)) and ((s.dx = :data_element_id0 and s.co = :category_option_combo_id0) or (s.dx = :data_element_id1 and s.co = :category_option_combo_id1) or (s.dx = :data_element_id2 and s.co = :category_option_combo_id2)) and (ax.uidlevel1 = 'ouabcdefghA' or ax.uidlevel1 = 'ouabcdefghB') and ( ax.pestartdate >= :start_date0 and ax.peenddate <= :end_date0 )) t1 where t1.z_score > :threshold order by middle_value_abs_dev desc limit :max_results ";
     assertEquals(expected, sql);
   }
 
@@ -151,7 +151,7 @@ class AnalyticsZscoreSqlStatementProcessorTest {
         .build();
     String sql = subject.getSqlStatement(builder.build());
     String expected =
-        "select * from (select ax.dx as de_uid, ax.ou as ou_uid, ax.co as coc_uid, ax.ao as aoc_uid, ax.value, ax.pestartdate as pe_start_date, ax.petype as pt_name,  ax.avg_middle_value as middle_value, ax.std_dev, ax.mad, abs(ax.value::double precision -  ax.avg_middle_value) as middle_value_abs_dev, (case when ax.std_dev = 0 then 0       else abs(ax.value::double precision -  ax.avg_middle_value ) / ax.std_dev        end) as z_score,  ax.avg_middle_value - (ax.std_dev * :threshold) as lower_bound,  ax.avg_middle_value + (ax.std_dev * :threshold) as upper_bound from analytics ax where ((ax.dataelementid = :data_element_id0 and ax.categoryoptioncomboid = :category_option_combo_id0) or (ax.dataelementid = :data_element_id1 and ax.categoryoptioncomboid = :category_option_combo_id1) or (ax.dataelementid = :data_element_id2 and ax.categoryoptioncomboid = :category_option_combo_id2)) and (ax.\"path\" like '/ouabcdefghA%' or ax.\"path\" like '/ouabcdefghB%') and ax.pestartdate >= :start_date and ax.peenddate <= :end_date) t1 where t1.z_score > :threshold order by middle_value_abs_dev desc limit :max_results ";
+        "select * from (select ax.dx as de_uid, ax.ou as ou_uid, ax.co as coc_uid, ax.ao as aoc_uid, ax.value, ax.pestartdate as pe_start_date, ax.pe,  s.mean as middle_value, s.std_dev, s.mad, abs(ax.value -  s.mean) as middle_value_abs_dev, (case when s.std_dev = 0 then 0       else abs(ax.value -  s.mean ) / s.std_dev        end) as z_score,  s.mean - (s.std_dev * :threshold) as lower_bound,  s.mean + (s.std_dev * :threshold) as upper_bound from analytics ax inner join analytics_outlier_stats s on ax.dx = s.dx and ax.ou = s.ou and ax.co = s.co and ax.ao = s.ao where ((ax.dx = :data_element_id0 and ax.co = :category_option_combo_id0) or (ax.dx = :data_element_id1 and ax.co = :category_option_combo_id1) or (ax.dx = :data_element_id2 and ax.co = :category_option_combo_id2)) and ((s.dx = :data_element_id0 and s.co = :category_option_combo_id0) or (s.dx = :data_element_id1 and s.co = :category_option_combo_id1) or (s.dx = :data_element_id2 and s.co = :category_option_combo_id2)) and (ax.uidlevel1 = 'ouabcdefghA' or ax.uidlevel1 = 'ouabcdefghB') and ax.pestartdate >= :start_date and ax.peenddate <= :end_date) t1 where t1.z_score > :threshold order by middle_value_abs_dev desc limit :max_results ";
     assertEquals(expected, sql);
   }
 }

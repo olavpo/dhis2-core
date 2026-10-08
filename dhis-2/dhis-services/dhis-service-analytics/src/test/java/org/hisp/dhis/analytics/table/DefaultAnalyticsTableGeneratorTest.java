@@ -76,6 +76,7 @@ class DefaultAnalyticsTableGeneratorTest {
   @Mock private AnalyticsTableSettings analyticsTableSettings;
   @Mock private AnalyticsCache analyticsCache;
   @Mock private OutliersCache outliersCache;
+  @Mock private OutlierStatsTableManager outlierStatsTableManager;
 
   private DefaultAnalyticsTableGenerator generator;
 
@@ -93,7 +94,8 @@ class DefaultAnalyticsTableGeneratorTest {
             settingsService,
             analyticsTableSettings,
             analyticsCache,
-            outliersCache);
+            outliersCache,
+            outlierStatsTableManager);
   }
 
   @Test
@@ -172,7 +174,8 @@ class DefaultAnalyticsTableGeneratorTest {
             settingsService,
             analyticsTableSettings,
             analyticsCache,
-            outliersCache);
+            outliersCache,
+            outlierStatsTableManager);
     AnalyticsTableUpdateParams params =
         AnalyticsTableUpdateParams.newBuilder().skipResourceTables(true).build();
 

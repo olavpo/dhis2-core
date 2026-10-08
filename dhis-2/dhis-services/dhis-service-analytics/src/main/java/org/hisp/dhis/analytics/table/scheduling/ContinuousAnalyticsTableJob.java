@@ -38,7 +38,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hisp.dhis.analytics.AnalyticsTableGenerator;
 import org.hisp.dhis.analytics.AnalyticsTableUpdateParams;
-import org.hisp.dhis.analytics.common.TableInfoReader;
 import org.hisp.dhis.db.sql.SqlBuilder;
 import org.hisp.dhis.scheduling.Job;
 import org.hisp.dhis.scheduling.JobEntry;
@@ -72,8 +71,6 @@ public class ContinuousAnalyticsTableJob implements Job {
 
   private final SystemSettingsService settingsService;
 
-  private final TableInfoReader tableInfoReader;
-
   private final SqlBuilder sqlBuilder;
 
   @Override
@@ -85,12 +82,6 @@ public class ContinuousAnalyticsTableJob implements Job {
   public void execute(JobEntry jobConfiguration, JobProgress progress) {
     ContinuousAnalyticsJobParameters parameters =
         (ContinuousAnalyticsJobParameters) jobConfiguration.parameters();
-
-    if (!checkJobOutliersConsistency(parameters)) {
-      log.info(
-          "Updating analytics table is currently not feasible, job parameters not aligned with existing outlier data");
-      return;
-    }
 
     final int fullUpdateHourOfDay =
         firstNonNull(parameters.getFullUpdateHourOfDay(), DEFAULT_HOUR_OF_DAY);
@@ -148,16 +139,6 @@ public class ContinuousAnalyticsTableJob implements Job {
     Date nextFullUpdate = settingsService.getCurrentSettings().getNextAnalyticsTableUpdate();
 
     return startTime.after(nextFullUpdate);
-  }
-
-  private boolean checkJobOutliersConsistency(ContinuousAnalyticsJobParameters parameters) {
-    boolean analyticsTableWithOutliers =
-        tableInfoReader.getInfo("analytics").getColumns().stream()
-            .anyMatch("sourceid"::equalsIgnoreCase);
-    boolean skipOutliers = skipOutliers(parameters);
-
-    return !skipOutliers && analyticsTableWithOutliers
-        || skipOutliers && !analyticsTableWithOutliers;
   }
 
   boolean skipOutliers(ContinuousAnalyticsJobParameters parameters) {

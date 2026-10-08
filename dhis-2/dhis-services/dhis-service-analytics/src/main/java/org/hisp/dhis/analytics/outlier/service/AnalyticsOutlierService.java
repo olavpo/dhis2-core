@@ -68,6 +68,7 @@ import org.hisp.dhis.analytics.common.TableInfoReader;
 import org.hisp.dhis.analytics.data.DimensionalObjectProvider;
 import org.hisp.dhis.analytics.outlier.data.Outlier;
 import org.hisp.dhis.analytics.outlier.data.OutlierRequest;
+import org.hisp.dhis.analytics.table.OutlierStatsTableManager;
 import org.hisp.dhis.category.CategoryOptionCombo;
 import org.hisp.dhis.common.ExecutionPlan;
 import org.hisp.dhis.common.Grid;
@@ -196,14 +197,11 @@ public class AnalyticsOutlierService {
   }
 
   /**
-   * The inclusion of outliers is an optional aspect of the analytics table. The outliers API entry
-   * point can generate a proper response only when outliers are exported along with the analytics
-   * table. The 'sourceid' column serves as a reliable indicator for successful outliers export. Its
-   * absence implies that the outliers were not exported.
+   * The outlier statistics table is built after the analytics table unless outliers are skipped.
+   * The outliers API entry point can generate a proper response only when that table exists.
    */
   public void checkAnalyticsTableForOutliers() {
-    if (tableInfoReader.getInfo("analytics").getColumns().stream()
-        .noneMatch("sourceid"::equalsIgnoreCase)) {
+    if (tableInfoReader.getInfo(OutlierStatsTableManager.TABLE_NAME).getColumns().isEmpty()) {
       throw new IllegalQueryException(new ErrorMessage(ErrorCode.E7180));
     }
   }

@@ -29,6 +29,7 @@
  */
 package org.hisp.dhis.analytics.table;
 
+import static org.hisp.dhis.analytics.AnalyticsTableType.DATA_VALUE;
 import static org.hisp.dhis.analytics.AnalyticsTableType.ENROLLMENT;
 import static org.hisp.dhis.analytics.AnalyticsTableType.EVENT;
 import static org.hisp.dhis.analytics.AnalyticsTableType.TRACKED_ENTITY_INSTANCE;
@@ -82,6 +83,8 @@ public class DefaultAnalyticsTableGenerator implements AnalyticsTableGenerator {
 
   private final OutliersCache outliersCache;
 
+  private final OutlierStatsTableManager outlierStatsTableManager;
+
   @Override
   public void generateAnalyticsTables(AnalyticsTableUpdateParams params0, JobProgress progress) {
     final Clock clock = new Clock(log).startClock();
@@ -133,6 +136,15 @@ public class DefaultAnalyticsTableGenerator implements AnalyticsTableGenerator {
       if (!skipTypes.contains(tableType) && service.create(params, progress)) {
         publishedTypes.add(tableType);
       }
+    }
+
+    // Outlier statistics are rebuilt on full runs only; latest partition runs reuse the
+    // existing statistics table
+    if (publishedTypes.contains(DATA_VALUE)
+        && !params.isSkipOutliers()
+        && !params.isLatestUpdate()) {
+      progress.startingStage("Generating outlier statistics table", SKIP_STAGE);
+      progress.runStage(outlierStatsTableManager::generateTable);
     }
 
     progress.startingStage("Updating system settings");

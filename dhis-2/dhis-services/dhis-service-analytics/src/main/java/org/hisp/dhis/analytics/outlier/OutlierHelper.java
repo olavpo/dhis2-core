@@ -61,15 +61,16 @@ import org.springframework.jdbc.BadSqlGrammarException;
 public class OutlierHelper {
 
   /**
-   * Returns an organisation unit 'path' "like" clause for the given list of {@link
-   * OrganisationUnit}.
+   * Returns an organisation unit clause for the given list of {@link OrganisationUnit}, matching
+   * the analytics table org unit level columns ({@code uidlevelN}).
    *
    * @param orgUnits the list of {@link OrganisationUnit}.
+   * @param alias the analytics table alias.
    * @param relation is sql logical operator.
-   * @return an organisation unit 'path' "like" clause.
+   * @return an organisation unit clause.
    */
-  public static String getOrgUnitPathClause(
-      List<OrganisationUnit> orgUnits, String pathAlias, String relation) {
+  public static String getOrgUnitLevelClause(
+      List<OrganisationUnit> orgUnits, String alias, String relation) {
     if (orgUnits == null || orgUnits.isEmpty()) {
       return EMPTY;
     }
@@ -77,10 +78,12 @@ public class OutlierHelper {
     StringBuilder sql = new StringBuilder(relation + " (");
     orgUnits.forEach(
         ou ->
-            sql.append(pathAlias)
-                .append(".\"path\" like '")
-                .append(ou.getStoredPath())
-                .append("%' or "));
+            sql.append(alias)
+                .append(".uidlevel")
+                .append(ou.getLevel())
+                .append(" = '")
+                .append(ou.getUid())
+                .append("' or "));
 
     return StringUtils.trim(TextUtils.removeLastOr(sql.toString())) + ")";
   }

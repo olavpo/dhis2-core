@@ -33,7 +33,6 @@ import static java.lang.Double.NaN;
 import static org.apache.commons.math3.util.Precision.round;
 import static org.hisp.dhis.analytics.OutlierDetectionAlgorithm.MODIFIED_Z_SCORE;
 import static org.hisp.dhis.analytics.outlier.OutlierHelper.withExceptionHandling;
-import static org.hisp.dhis.period.PeriodType.getIsoPeriod;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -44,9 +43,7 @@ import org.hisp.dhis.analytics.analyze.ExecutionPlanStore;
 import org.hisp.dhis.analytics.outlier.OutlierSqlStatementProcessor;
 import org.hisp.dhis.analytics.outlier.data.Outlier;
 import org.hisp.dhis.analytics.outlier.data.OutlierRequest;
-import org.hisp.dhis.calendar.Calendar;
 import org.hisp.dhis.common.ExecutionPlan;
-import org.hisp.dhis.period.PeriodType;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -65,6 +62,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 @RequiredArgsConstructor
 public class AnalyticsZScoreOutlierDetector {
+  @Qualifier("analyticsNamedParameterJdbcTemplate")
   private final NamedParameterJdbcTemplate jdbcTemplate;
 
   @Qualifier("analyticsZScoreSqlStatementProcessor")
@@ -81,13 +79,11 @@ public class AnalyticsZScoreOutlierDetector {
   public List<Outlier> getOutliers(OutlierRequest request) {
     String sql = sqlStatementProcessor.getSqlStatement(request);
     SqlParameterSource params = sqlStatementProcessor.getSqlParameterSource(request);
-    Calendar calendar = PeriodType.getCalendar();
     boolean modifiedZ = request.getAlgorithm() == MODIFIED_Z_SCORE;
 
     return withExceptionHandling(
             () ->
-                jdbcTemplate.query(
-                    sql, params, getRowMapper(calendar, modifiedZ, request.isSkipRounding())))
+                jdbcTemplate.query(sql, params, getRowMapper(modifiedZ, request.isSkipRounding())))
         .orElse(List.of());
   }
 
@@ -101,15 +97,13 @@ public class AnalyticsZScoreOutlierDetector {
   /**
    * Returns a {@link RowMapper} for {@link Outlier}.
    *
-   * @param calendar the {@link Calendar}.
    * @param modifiedZ boolean flag (false means z-score to be applied).
    * @param skipRounding indicates the rounding of the floating point types
    * @return a {@link RowMapper}.
    */
-  private RowMapper<Outlier> getRowMapper(
-      Calendar calendar, boolean modifiedZ, boolean skipRounding) {
+  private RowMapper<Outlier> getRowMapper(boolean modifiedZ, boolean skipRounding) {
     return (rs, rowNum) -> {
-      Outlier outlier = getOutlier(calendar, rs);
+      Outlier outlier = getOutlier(rs);
       addZScoreBasedParamsToOutlier(outlier, rs, modifiedZ, skipRounding);
 
       return outlier;
@@ -119,17 +113,14 @@ public class AnalyticsZScoreOutlierDetector {
   /**
    * Maps incoming database set into the api response element.
    *
-   * @param calendar the {@link Calendar}.
    * @param rs the {@link ResultSet}.
    * @return single {@link Outlier} instance.
    * @throws SQLException
    */
-  private Outlier getOutlier(Calendar calendar, ResultSet rs) throws SQLException {
-    String isoPeriod = getIsoPeriod(calendar, rs.getString("pt_name"), rs.getDate("pe_start_date"));
-
+  private Outlier getOutlier(ResultSet rs) throws SQLException {
     Outlier outlier = new Outlier();
     outlier.setDx(rs.getString("de_uid"));
-    outlier.setPe(isoPeriod);
+    outlier.setPe(rs.getString("pe"));
     outlier.setOu(rs.getString("ou_uid"));
     outlier.setCoc(rs.getString("coc_uid"));
     outlier.setAoc(rs.getString("aoc_uid"));
