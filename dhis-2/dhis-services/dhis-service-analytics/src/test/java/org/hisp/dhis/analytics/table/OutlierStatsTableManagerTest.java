@@ -33,9 +33,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 
 import java.util.List;
+import org.hisp.dhis.analytics.table.setting.AnalyticsTableSettings;
+import org.hisp.dhis.db.model.Logged;
 import org.hisp.dhis.db.sql.DorisSqlBuilder;
 import org.hisp.dhis.db.sql.PostgreSqlBuilder;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,11 +53,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class OutlierStatsTableManagerTest {
   @Mock private JdbcTemplate jdbcTemplate;
 
+  @Mock private AnalyticsTableSettings analyticsTableSettings;
+
   private OutlierStatsTableManager subject;
 
   @BeforeEach
   void setUp() {
-    subject = new OutlierStatsTableManager(jdbcTemplate, new PostgreSqlBuilder());
+    lenient().when(analyticsTableSettings.getTableLogged()).thenReturn(Logged.LOGGED);
+    subject =
+        new OutlierStatsTableManager(jdbcTemplate, new PostgreSqlBuilder(), analyticsTableSettings);
   }
 
   private List<String> generateAndCaptureSql() {
@@ -110,7 +117,9 @@ class OutlierStatsTableManagerTest {
 
   @Test
   void testDorisUsesPercentileAndSkipsIndex() {
-    subject = new OutlierStatsTableManager(jdbcTemplate, new DorisSqlBuilder("dhis2", "driver"));
+    subject =
+        new OutlierStatsTableManager(
+            jdbcTemplate, new DorisSqlBuilder("dhis2", "driver"), analyticsTableSettings);
     List<String> statements = generateAndCaptureSql();
 
     String median = find(statements, "insert into analytics_outlier_stats_med ");
@@ -124,6 +133,26 @@ class OutlierStatsTableManagerTest {
         statements.stream()
             .anyMatch(s -> s.startsWith("create table `analytics_outlier_stats_temp`")),
         statements.toString());
+  }
+
+  @Test
+  void testTablesFollowLoggedSetting() {
+    find(generateAndCaptureSql(), "create table \"analytics_outlier_stats_temp\" ");
+  }
+
+  @Test
+  void testTablesUnloggedWhenConfigured() {
+    lenient().when(analyticsTableSettings.getTableLogged()).thenReturn(Logged.UNLOGGED);
+    List<String> statements = generateAndCaptureSql();
+
+    find(statements, "create unlogged table \"analytics_outlier_stats_temp\" ");
+  }
+
+  @Test
+  void testDropTable() {
+    subject.dropTable();
+
+    verify(jdbcTemplate).execute("drop table if exists \"analytics_outlier_stats\";");
   }
 
   private int indexOfPrefix(List<String> statements, String prefix) {

@@ -38,11 +38,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.hisp.dhis.analytics.table.setting.AnalyticsTableSettings;
 import org.hisp.dhis.common.ValueType;
 import org.hisp.dhis.commons.util.TextUtils;
 import org.hisp.dhis.db.model.Column;
 import org.hisp.dhis.db.model.Index;
-import org.hisp.dhis.db.model.Logged;
 import org.hisp.dhis.db.model.Table;
 import org.hisp.dhis.db.sql.SqlBuilder;
 import org.hisp.dhis.system.util.Clock;
@@ -77,10 +77,15 @@ public class OutlierStatsTableManager {
 
   private final SqlBuilder sqlBuilder;
 
+  private final AnalyticsTableSettings analyticsTableSettings;
+
   public OutlierStatsTableManager(
-      @Qualifier("analyticsJdbcTemplate") JdbcTemplate jdbcTemplate, SqlBuilder sqlBuilder) {
+      @Qualifier("analyticsJdbcTemplate") JdbcTemplate jdbcTemplate,
+      SqlBuilder sqlBuilder,
+      AnalyticsTableSettings analyticsTableSettings) {
     this.jdbcTemplate = jdbcTemplate;
     this.sqlBuilder = sqlBuilder;
+    this.analyticsTableSettings = analyticsTableSettings;
   }
 
   /** Builds the outlier statistics table from the analytics table and swaps it in. */
@@ -124,6 +129,11 @@ public class OutlierStatsTableManager {
 
     execute(sqlBuilder.swapTable(tempTable, TABLE_NAME));
     clock.logTime("Outlier statistics table generated");
+  }
+
+  /** Drops the outlier statistics table, if it exists. */
+  public void dropTable() {
+    execute(sqlBuilder.dropTableIfExists(TABLE_NAME));
   }
 
   /**
@@ -211,7 +221,7 @@ public class OutlierStatsTableManager {
                 new Column("median", DOUBLE)));
     columns.addAll(extraColumns);
 
-    return new Table(name, columns, List.of(), Logged.UNLOGGED);
+    return new Table(name, columns, List.of(), analyticsTableSettings.getTableLogged());
   }
 
   private void execute(String sql) {

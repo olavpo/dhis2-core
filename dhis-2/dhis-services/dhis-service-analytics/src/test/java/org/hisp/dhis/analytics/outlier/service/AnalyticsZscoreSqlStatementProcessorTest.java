@@ -36,6 +36,7 @@ import static org.hisp.dhis.test.TestBase.createDataElement;
 import static org.hisp.dhis.test.TestBase.createOrganisationUnit;
 import static org.hisp.dhis.test.TestBase.getDate;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.common.collect.Lists;
@@ -136,7 +137,7 @@ class AnalyticsZscoreSqlStatementProcessorTest {
         .build();
     String sql = subject.getSqlStatement(builder.build());
     String expected =
-        "select * from (select ax.dx as de_uid, ax.ou as ou_uid, ax.co as coc_uid, ax.ao as aoc_uid, ax.value, ax.pestartdate as pe_start_date, ax.pe,  s.mean as middle_value, s.std_dev, s.mad, abs(ax.value -  s.mean) as middle_value_abs_dev, (case when s.std_dev = 0 then 0       else abs(ax.value -  s.mean ) / s.std_dev        end) as z_score,  s.mean - (s.std_dev * :threshold) as lower_bound,  s.mean + (s.std_dev * :threshold) as upper_bound from analytics ax inner join analytics_outlier_stats s on ax.dx = s.dx and ax.ou = s.ou and ax.co = s.co and ax.ao = s.ao where ((ax.dx = :data_element_id0 and ax.co = :category_option_combo_id0) or (ax.dx = :data_element_id1 and ax.co = :category_option_combo_id1) or (ax.dx = :data_element_id2 and ax.co = :category_option_combo_id2)) and ((s.dx = :data_element_id0 and s.co = :category_option_combo_id0) or (s.dx = :data_element_id1 and s.co = :category_option_combo_id1) or (s.dx = :data_element_id2 and s.co = :category_option_combo_id2)) and (ax.uidlevel1 = 'ouabcdefghA' or ax.uidlevel1 = 'ouabcdefghB') and ( ax.pestartdate >= :start_date0 and ax.peenddate <= :end_date0 )) t1 where t1.z_score > :threshold order by middle_value_abs_dev desc limit :max_results ";
+        "select * from (select ax.dx as de_uid, ax.ou as ou_uid, ax.co as coc_uid, ax.ao as aoc_uid, ax.value, ax.pestartdate as pe_start_date, ax.pe,  s.mean as middle_value, s.std_dev, s.mad, abs(ax.value -  s.mean) as middle_value_abs_dev, (case when s.std_dev = 0 then 0       else abs(ax.value -  s.mean ) / s.std_dev        end) as z_score,  s.mean - (s.std_dev * :threshold) as lower_bound,  s.mean + (s.std_dev * :threshold) as upper_bound from analytics ax inner join analytics_outlier_stats s on ax.dx = s.dx and ax.ou = s.ou and ax.co = s.co and ax.ao = s.ao where ((ax.dx = :data_element_id0 and ax.co = :category_option_combo_id0) or (ax.dx = :data_element_id1 and ax.co = :category_option_combo_id1) or (ax.dx = :data_element_id2 and ax.co = :category_option_combo_id2)) and ((s.dx = :data_element_id0 and s.co = :category_option_combo_id0) or (s.dx = :data_element_id1 and s.co = :category_option_combo_id1) or (s.dx = :data_element_id2 and s.co = :category_option_combo_id2)) and ax.ou in (select ous.organisationunituid from analytics_rs_orgunitstructure ous where ous.uidlevel1 = 'ouabcdefghA' or ous.uidlevel1 = 'ouabcdefghB') and ( ax.pestartdate >= :start_date0 and ax.peenddate <= :end_date0 )) t1 where t1.z_score > :threshold order by middle_value_abs_dev desc limit :max_results ";
     assertEquals(expected, sql);
   }
 
@@ -151,7 +152,29 @@ class AnalyticsZscoreSqlStatementProcessorTest {
         .build();
     String sql = subject.getSqlStatement(builder.build());
     String expected =
-        "select * from (select ax.dx as de_uid, ax.ou as ou_uid, ax.co as coc_uid, ax.ao as aoc_uid, ax.value, ax.pestartdate as pe_start_date, ax.pe,  s.mean as middle_value, s.std_dev, s.mad, abs(ax.value -  s.mean) as middle_value_abs_dev, (case when s.std_dev = 0 then 0       else abs(ax.value -  s.mean ) / s.std_dev        end) as z_score,  s.mean - (s.std_dev * :threshold) as lower_bound,  s.mean + (s.std_dev * :threshold) as upper_bound from analytics ax inner join analytics_outlier_stats s on ax.dx = s.dx and ax.ou = s.ou and ax.co = s.co and ax.ao = s.ao where ((ax.dx = :data_element_id0 and ax.co = :category_option_combo_id0) or (ax.dx = :data_element_id1 and ax.co = :category_option_combo_id1) or (ax.dx = :data_element_id2 and ax.co = :category_option_combo_id2)) and ((s.dx = :data_element_id0 and s.co = :category_option_combo_id0) or (s.dx = :data_element_id1 and s.co = :category_option_combo_id1) or (s.dx = :data_element_id2 and s.co = :category_option_combo_id2)) and (ax.uidlevel1 = 'ouabcdefghA' or ax.uidlevel1 = 'ouabcdefghB') and ax.pestartdate >= :start_date and ax.peenddate <= :end_date) t1 where t1.z_score > :threshold order by middle_value_abs_dev desc limit :max_results ";
+        "select * from (select ax.dx as de_uid, ax.ou as ou_uid, ax.co as coc_uid, ax.ao as aoc_uid, ax.value, ax.pestartdate as pe_start_date, ax.pe,  s.mean as middle_value, s.std_dev, s.mad, abs(ax.value -  s.mean) as middle_value_abs_dev, (case when s.std_dev = 0 then 0       else abs(ax.value -  s.mean ) / s.std_dev        end) as z_score,  s.mean - (s.std_dev * :threshold) as lower_bound,  s.mean + (s.std_dev * :threshold) as upper_bound from analytics ax inner join analytics_outlier_stats s on ax.dx = s.dx and ax.ou = s.ou and ax.co = s.co and ax.ao = s.ao where ((ax.dx = :data_element_id0 and ax.co = :category_option_combo_id0) or (ax.dx = :data_element_id1 and ax.co = :category_option_combo_id1) or (ax.dx = :data_element_id2 and ax.co = :category_option_combo_id2)) and ((s.dx = :data_element_id0 and s.co = :category_option_combo_id0) or (s.dx = :data_element_id1 and s.co = :category_option_combo_id1) or (s.dx = :data_element_id2 and s.co = :category_option_combo_id2)) and ax.ou in (select ous.organisationunituid from analytics_rs_orgunitstructure ous where ous.uidlevel1 = 'ouabcdefghA' or ous.uidlevel1 = 'ouabcdefghB') and ax.pestartdate >= :start_date and ax.peenddate <= :end_date) t1 where t1.z_score > :threshold order by middle_value_abs_dev desc limit :max_results ";
     assertEquals(expected, sql);
+  }
+
+  @Test
+  void testGetSqlStatementFiltersOrgUnitsThroughOrgUnitStructure() {
+    OrganisationUnit ouC = createOrganisationUnit('C', ouA);
+
+    OutlierRequest request =
+        OutlierRequest.builder()
+            .dataDimensions(dataDimensions)
+            .startDate(getDate(2020, 1, 1))
+            .endDate(getDate(2020, 3, 1))
+            .orgUnits(Lists.newArrayList(ouC))
+            .build();
+
+    String sql = subject.getSqlStatement(request);
+
+    assertTrue(
+        sql.contains(
+            "and ax.ou in (select ous.organisationunituid from analytics_rs_orgunitstructure ous"
+                + " where ous.uidlevel2 = 'ouabcdefghC')"),
+        sql);
+    assertFalse(sql.contains("ax.uidlevel"), sql);
   }
 }

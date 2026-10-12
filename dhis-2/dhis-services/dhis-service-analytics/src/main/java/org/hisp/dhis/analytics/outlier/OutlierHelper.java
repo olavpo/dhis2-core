@@ -40,12 +40,12 @@ import static org.hisp.dhis.util.SqlExceptionUtils.relationDoesNotExist;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import org.hisp.dhis.analytics.DataQueryParams;
 import org.hisp.dhis.common.IllegalQueryException;
 import org.hisp.dhis.common.QueryRuntimeException;
-import org.hisp.dhis.commons.util.TextUtils;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -61,31 +61,40 @@ import org.springframework.jdbc.BadSqlGrammarException;
 public class OutlierHelper {
 
   /**
-   * Returns an organisation unit clause for the given list of {@link OrganisationUnit}, matching
-   * the analytics table org unit level columns ({@code uidlevelN}).
+   * Returns an organisation unit clause for the given list of {@link OrganisationUnit}. The clause
+   * matches analytics rows whose org unit is at or below any of the given org units, using the org
+   * unit structure resource table. The level columns of the analytics table itself are not used, as
+   * they are set to null for data elements with aggregation levels.
    *
    * @param orgUnits the list of {@link OrganisationUnit}.
    * @param alias the analytics table alias.
    * @param relation is sql logical operator.
    * @return an organisation unit clause.
    */
-  public static String getOrgUnitLevelClause(
+  public static String getOrgUnitClause(
       List<OrganisationUnit> orgUnits, String alias, String relation) {
     if (orgUnits == null || orgUnits.isEmpty()) {
       return EMPTY;
     }
 
-    StringBuilder sql = new StringBuilder(relation + " (");
-    orgUnits.forEach(
-        ou ->
-            sql.append(alias)
-                .append(".uidlevel")
-                .append(ou.getLevel())
-                .append(" = '")
-                .append(ou.getUid())
-                .append("' or "));
+    String levelClauses =
+        orgUnits.stream()
+            .map(
+                ou ->
+                    "ous."
+                        + DataQueryParams.LEVEL_PREFIX
+                        + ou.getLevel()
+                        + " = '"
+                        + ou.getUid()
+                        + "'")
+            .collect(Collectors.joining(" or "));
 
-    return StringUtils.trim(TextUtils.removeLastOr(sql.toString())) + ")";
+    return relation
+        + " "
+        + alias
+        + ".ou in (select ous.organisationunituid from analytics_rs_orgunitstructure ous where "
+        + levelClauses
+        + ")";
   }
 
   /**

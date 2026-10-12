@@ -152,7 +152,7 @@ public class AnalyticsZScoreSqlStatementProcessor implements OutlierSqlStatement
       return EMPTY;
     }
 
-    String ouClause = OutlierHelper.getOrgUnitLevelClause(request.getOrgUnits(), "ax", "and");
+    String ouClause = OutlierHelper.getOrgUnitClause(request.getOrgUnits(), "ax", "and");
 
     boolean modifiedZ = request.getAlgorithm() == MODIFIED_Z_SCORE;
 

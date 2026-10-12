@@ -32,8 +32,10 @@ package org.hisp.dhis.analytics.table;
 import static org.hisp.dhis.analytics.AnalyticsTableType.DATA_VALUE;
 import static org.hisp.dhis.analytics.AnalyticsTableType.ENROLLMENT;
 import static org.hisp.dhis.analytics.AnalyticsTableType.EVENT;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -55,6 +57,7 @@ import org.hisp.dhis.setting.SystemSettingsService;
 import org.hisp.dhis.tablereplication.TableReplicationService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -222,5 +225,76 @@ class DefaultAnalyticsTableGeneratorTest {
 
     verify(settingsService).put("keyLastSuccessfulAnalyticsTablesUpdate", startTime);
     verify(settingsService).put(eq("keyLastSuccessfulAnalyticsTablesRuntime"), any());
+  }
+
+  @Test
+  void fullUpdateGeneratesOutlierStatisticsRightAfterDataValueTables() {
+    setUp();
+    AnalyticsTableUpdateParams params =
+        AnalyticsTableUpdateParams.newBuilder().skipResourceTables(true).build();
+
+    generator.generateAnalyticsTables(params, JobProgress.noop());
+
+    InOrder inOrder = inOrder(dataValueTableService, outlierStatsTableManager, eventTableService);
+    inOrder.verify(dataValueTableService).create(any(), any());
+    inOrder.verify(outlierStatsTableManager).generateTable();
+    inOrder.verify(eventTableService).create(any(), any());
+    verify(outlierStatsTableManager, never()).dropTable();
+  }
+
+  @Test
+  void outlierStatisticsGeneratedEvenWhenLaterTableTypeFails() {
+    setUp();
+    when(eventTableService.create(any(), any())).thenThrow(new IllegalStateException("failed"));
+    AnalyticsTableUpdateParams params =
+        AnalyticsTableUpdateParams.newBuilder().skipResourceTables(true).build();
+
+    assertThrows(
+        IllegalStateException.class,
+        () -> generator.generateAnalyticsTables(params, JobProgress.noop()));
+
+    verify(outlierStatsTableManager).generateTable();
+  }
+
+  @Test
+  void fullUpdateSkippingOutliersDropsOutlierStatistics() {
+    setUp();
+    AnalyticsTableUpdateParams params =
+        AnalyticsTableUpdateParams.newBuilder().skipResourceTables(true).skipOutliers(true).build();
+
+    generator.generateAnalyticsTables(params, JobProgress.noop());
+
+    verify(outlierStatsTableManager).dropTable();
+    verify(outlierStatsTableManager, never()).generateTable();
+  }
+
+  @Test
+  void latestPartitionUpdateLeavesOutlierStatistics() {
+    setUp();
+    AnalyticsTableUpdateParams params =
+        AnalyticsTableUpdateParams.newBuilder()
+            .skipResourceTables(true)
+            .build()
+            .withLatestPartition();
+
+    generator.generateAnalyticsTables(params, JobProgress.noop());
+
+    verify(outlierStatsTableManager, never()).generateTable();
+    verify(outlierStatsTableManager, never()).dropTable();
+  }
+
+  @Test
+  void skippedDataValueTablesLeaveOutlierStatistics() {
+    setUp();
+    AnalyticsTableUpdateParams params =
+        AnalyticsTableUpdateParams.newBuilder()
+            .skipResourceTables(true)
+            .skipTableTypes(Set.of(DATA_VALUE))
+            .build();
+
+    generator.generateAnalyticsTables(params, JobProgress.noop());
+
+    verify(outlierStatsTableManager, never()).generateTable();
+    verify(outlierStatsTableManager, never()).dropTable();
   }
 }

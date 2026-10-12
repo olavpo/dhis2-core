@@ -135,16 +135,11 @@ public class DefaultAnalyticsTableGenerator implements AnalyticsTableGenerator {
       AnalyticsTableType tableType = service.getAnalyticsTableType();
       if (!skipTypes.contains(tableType) && service.create(params, progress)) {
         publishedTypes.add(tableType);
-      }
-    }
 
-    // Outlier statistics are rebuilt on full runs only; latest partition runs reuse the
-    // existing statistics table
-    if (publishedTypes.contains(DATA_VALUE)
-        && !params.isSkipOutliers()
-        && !params.isLatestUpdate()) {
-      progress.startingStage("Generating outlier statistics table", SKIP_STAGE);
-      progress.runStage(outlierStatsTableManager::generateTable);
+        if (tableType == DATA_VALUE) {
+          updateOutlierStatistics(params, progress);
+        }
+      }
     }
 
     progress.startingStage("Updating system settings");
@@ -155,6 +150,29 @@ public class DefaultAnalyticsTableGenerator implements AnalyticsTableGenerator {
     progress.runStage(outliersCache::invalidateAll);
     clock.logTime("Analytics tables updated");
     progress.completedProcess("Analytics tables updated: {}", clock.time());
+  }
+
+  /**
+   * Updates the outlier statistics table right after the data value analytics table is swapped in,
+   * so that the statistics match the new analytics data and do not depend on later table types.
+   * Latest partition updates reuse the existing statistics. A full update which skips outliers
+   * drops the statistics table, so that outlier queries do not use statistics from an older run.
+   *
+   * @param params the {@link AnalyticsTableUpdateParams}.
+   * @param progress the {@link JobProgress}.
+   */
+  private void updateOutlierStatistics(AnalyticsTableUpdateParams params, JobProgress progress) {
+    if (params.isLatestUpdate()) {
+      return;
+    }
+
+    if (params.isSkipOutliers()) {
+      progress.startingStage("Dropping outlier statistics table", SKIP_STAGE);
+      progress.runStage(outlierStatsTableManager::dropTable);
+    } else {
+      progress.startingStage("Generating outlier statistics table", SKIP_STAGE);
+      progress.runStage(outlierStatsTableManager::generateTable);
+    }
   }
 
   /**

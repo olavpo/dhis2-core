@@ -61,7 +61,10 @@ public class AnalyticsTableUpdateParams {
   /** Indicates whether to skip update of resource tables. */
   private final boolean skipResourceTables;
 
-  /** Indicates whether to skip update of analytics tables, outliers stats columns. */
+  /**
+   * Indicates whether to skip the outlier statistics table. On a full update, the statistics table
+   * is then dropped.
+   */
   private final boolean skipOutliers;
 
   /** Indicates whether to refresh the period resource table before analytics table update. */
