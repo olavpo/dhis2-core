@@ -414,4 +414,9 @@ class DorisSqlBuilderTest {
 
     assertEquals(expected, sqlBuilder.createCatalog("127.0.0.1", "dhis", "district"));
   }
+
+  @Test
+  void testPercentile() {
+    assertEquals("percentile(value, 0.5)", sqlBuilder.percentile("value", 0.5));
+  }
 }

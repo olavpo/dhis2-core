@@ -371,6 +371,11 @@ public class PostgreSqlBuilder extends AbstractSqlBuilder {
   }
 
   @Override
+  public String percentile(String expression, double fraction) {
+    return String.format("percentile_cont(%s) within group (order by %s)", fraction, expression);
+  }
+
+  @Override
   public String variance(String expression) {
     return String.format("variance(%s)", expression);
   }

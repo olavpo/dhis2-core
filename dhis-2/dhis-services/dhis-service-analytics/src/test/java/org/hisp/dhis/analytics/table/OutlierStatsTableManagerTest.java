@@ -36,6 +36,7 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 
 import java.util.List;
+import org.hisp.dhis.db.sql.DorisSqlBuilder;
 import org.hisp.dhis.db.sql.PostgreSqlBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -105,6 +106,24 @@ class OutlierStatsTableManagerTest {
     assertTrue(madInsert >= 0 && index > madInsert && swap > index, statements.toString());
     assertTrue(
         statements.get(index).contains("\"dx\",\"ou\",\"co\",\"ao\""), statements.get(index));
+  }
+
+  @Test
+  void testDorisUsesPercentileAndSkipsIndex() {
+    subject = new OutlierStatsTableManager(jdbcTemplate, new DorisSqlBuilder("dhis2", "driver"));
+    List<String> statements = generateAndCaptureSql();
+
+    String median = find(statements, "insert into analytics_outlier_stats_med ");
+    String mad = find(statements, "insert into analytics_outlier_stats_temp ");
+
+    assertTrue(median.contains("percentile(ax.value, 0.5) as median"), median);
+    assertTrue(mad.contains("percentile(abs(ax.value - m.median), 0.5) as mad"), mad);
+    assertFalse(median.contains("percentile_cont"));
+    assertEquals(-1, indexOfContains(statements, "create index "), statements.toString());
+    assertTrue(
+        statements.stream()
+            .anyMatch(s -> s.startsWith("create table `analytics_outlier_stats_temp`")),
+        statements.toString());
   }
 
   private int indexOfPrefix(List<String> statements, String prefix) {

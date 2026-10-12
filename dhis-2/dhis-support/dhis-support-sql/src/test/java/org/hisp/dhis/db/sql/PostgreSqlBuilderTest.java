@@ -588,4 +588,10 @@ class PostgreSqlBuilderTest {
 
     assertEquals(expected, sqlBuilder.insertIntoSelectFrom(getTableB(), "\"immunization\""));
   }
+
+  @Test
+  void testPercentile() {
+    assertEquals(
+        "percentile_cont(0.5) within group (order by value)", sqlBuilder.percentile("value", 0.5));
+  }
 }

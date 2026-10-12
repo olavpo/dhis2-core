@@ -230,7 +230,8 @@ public interface SqlBuilder {
    * The percentile_cont function is a statistical function that calculates the continuous
    * percentile value for a given set of data.
    *
-   * @return true if the DBMS supports the percentile_cont function.
+   * @return true if the DBMS supports an exact continuous percentile aggregate, see {@link
+   *     #percentile(String, double)}.
    */
   boolean supportsPercentileCont();
 
@@ -425,6 +426,16 @@ public interface SqlBuilder {
    * @return a SQL fragment that calculates the variance of the given expression.
    */
   String variance(String expression);
+
+  /**
+   * Generates a SQL aggregate fragment that computes the exact continuous percentile of the
+   * specified expression, interpolating linearly between values (as {@code percentile_cont}).
+   *
+   * @param expression a numeric expression or column name.
+   * @param fraction the percentile as a fraction between 0 and 1, e.g. 0.5 for the median.
+   * @return a SQL fragment that calculates the percentile of the given expression.
+   */
+  String percentile(String expression, double fraction);
 
   /**
    * Returns a conditional statement.

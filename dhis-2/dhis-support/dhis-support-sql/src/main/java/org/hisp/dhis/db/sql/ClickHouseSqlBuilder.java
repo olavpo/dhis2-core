@@ -395,6 +395,11 @@ public class ClickHouseSqlBuilder extends AbstractSqlBuilder {
   }
 
   @Override
+  public String percentile(String expression, double fraction) {
+    return notSupported();
+  }
+
+  @Override
   public String variance(String expression) {
     return String.format("varSamp(%s)", expression);
   }

@@ -126,6 +126,15 @@ public class OutlierStatsTableManager {
     clock.logTime("Outlier statistics table generated");
   }
 
+  /**
+   * Indicates whether the outlier statistics table exists in the analytics database.
+   *
+   * @return true if the table exists.
+   */
+  public boolean tableExists() {
+    return !jdbcTemplate.queryForList(sqlBuilder.tableExists(TABLE_NAME)).isEmpty();
+  }
+
   /** Pass 1: count, mean, population standard deviation and median per group. */
   private String getMedianInsertSql() {
     return TextUtils.replace(
@@ -135,12 +144,15 @@ public class OutlierStatsTableManager {
         count(*) as n, \
         avg(ax.value) as mean, \
         stddev_pop(ax.value) as std_dev, \
-        percentile_cont(0.5) within group (order by ax.value) as median \
+        ${median} as median \
         from analytics ax \
         where ax.value is not null \
         and ${numericClause} \
         group by ax.dx, ax.ou, ax.co, ax.ao;""",
-        Map.of("medianTable", MEDIAN_TABLE_NAME, "numericClause", getNumericDataElementClause()));
+        Map.of(
+            "medianTable", MEDIAN_TABLE_NAME,
+            "median", sqlBuilder.percentile("ax.value", 0.5),
+            "numericClause", getNumericDataElementClause()));
   }
 
   /**
@@ -156,14 +168,17 @@ public class OutlierStatsTableManager {
         from ${medianTable} s \
         inner join (\
         select ax.dx, ax.ou, ax.co, ax.ao, \
-        percentile_cont(0.5) within group (order by abs(ax.value - m.median)) as mad \
+        ${mad} as mad \
         from analytics ax \
         inner join ${medianTable} m \
         on ax.dx = m.dx and ax.ou = m.ou and ax.co = m.co and ax.ao = m.ao \
         where ax.value is not null \
         group by ax.dx, ax.ou, ax.co, ax.ao) d \
         on s.dx = d.dx and s.ou = d.ou and s.co = d.co and s.ao = d.ao;""",
-        Map.of("tempTable", TEMP_TABLE_NAME, "medianTable", MEDIAN_TABLE_NAME));
+        Map.of(
+            "tempTable", TEMP_TABLE_NAME,
+            "medianTable", MEDIAN_TABLE_NAME,
+            "mad", sqlBuilder.percentile("abs(ax.value - m.median)", 0.5)));
   }
 
   /**

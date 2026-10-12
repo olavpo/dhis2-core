@@ -64,7 +64,6 @@ import java.util.stream.Stream;
 import lombok.AllArgsConstructor;
 import org.hisp.dhis.analytics.cache.OutliersCache;
 import org.hisp.dhis.analytics.common.ColumnHeader;
-import org.hisp.dhis.analytics.common.TableInfoReader;
 import org.hisp.dhis.analytics.data.DimensionalObjectProvider;
 import org.hisp.dhis.analytics.outlier.data.Outlier;
 import org.hisp.dhis.analytics.outlier.data.OutlierRequest;
@@ -103,7 +102,7 @@ public class AnalyticsOutlierService {
 
   private final UserService userService;
 
-  private final TableInfoReader tableInfoReader;
+  private final OutlierStatsTableManager outlierStatsTableManager;
 
   private final IdentifiableObjectManager idObjectManager;
 
@@ -201,7 +200,7 @@ public class AnalyticsOutlierService {
    * The outliers API entry point can generate a proper response only when that table exists.
    */
   public void checkAnalyticsTableForOutliers() {
-    if (tableInfoReader.getInfo(OutlierStatsTableManager.TABLE_NAME).getColumns().isEmpty()) {
+    if (!outlierStatsTableManager.tableExists()) {
       throw new IllegalQueryException(new ErrorMessage(ErrorCode.E7180));
     }
   }

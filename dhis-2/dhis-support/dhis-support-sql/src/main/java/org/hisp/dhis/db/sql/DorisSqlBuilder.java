@@ -234,7 +234,7 @@ public class DorisSqlBuilder extends AbstractSqlBuilder {
 
   @Override
   public boolean supportsPercentileCont() {
-    return false;
+    return true;
   }
 
   // Utilities
@@ -362,6 +362,11 @@ public class DorisSqlBuilder extends AbstractSqlBuilder {
   @Override
   public String stddev(String expression) {
     return String.format("stddev(%s)", expression);
+  }
+
+  @Override
+  public String percentile(String expression, double fraction) {
+    return String.format("percentile(%s, %s)", expression, fraction);
   }
 
   @Override
