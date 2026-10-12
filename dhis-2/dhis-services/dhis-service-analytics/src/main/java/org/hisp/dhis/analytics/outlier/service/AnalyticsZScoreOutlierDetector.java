@@ -36,6 +36,7 @@ import static org.hisp.dhis.analytics.outlier.OutlierHelper.withExceptionHandlin
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.hisp.dhis.analytics.OutlierDetectionAlgorithm;
@@ -44,10 +45,14 @@ import org.hisp.dhis.analytics.outlier.OutlierSqlStatementProcessor;
 import org.hisp.dhis.analytics.outlier.data.Outlier;
 import org.hisp.dhis.analytics.outlier.data.OutlierRequest;
 import org.hisp.dhis.common.ExecutionPlan;
+import org.hisp.dhis.db.model.Database;
+import org.hisp.dhis.db.sql.SqlBuilder;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -70,6 +75,8 @@ public class AnalyticsZScoreOutlierDetector {
 
   private final ExecutionPlanStore executionPlanStore;
 
+  private final SqlBuilder sqlBuilder;
+
   /**
    * Retrieves all outliers.
    *
@@ -81,10 +88,41 @@ public class AnalyticsZScoreOutlierDetector {
     SqlParameterSource params = sqlStatementProcessor.getSqlParameterSource(request);
     boolean modifiedZ = request.getAlgorithm() == MODIFIED_Z_SCORE;
 
+    RowMapper<Outlier> rowMapper = getRowMapper(modifiedZ, request.isSkipRounding());
+
     return withExceptionHandling(
             () ->
-                jdbcTemplate.query(sql, params, getRowMapper(modifiedZ, request.isSkipRounding())))
+                sqlBuilder.getDatabase() == Database.POSTGRESQL
+                    ? queryWithHashJoin(sql, params, rowMapper)
+                    : jdbcTemplate.query(sql, params, rowMapper))
         .orElse(List.of());
+  }
+
+  /**
+   * Runs the query on PostgreSQL with merge and nested loop joins disabled for this transaction
+   * only. The planner underestimates the four-column join to the outlier statistics table and picks
+   * a merge join which sorts the analytics rows, while a hash join is several times faster. {@code
+   * set local} settings end with the transaction, so the pooled connection is unaffected.
+   */
+  private List<Outlier> queryWithHashJoin(
+      String sql, SqlParameterSource params, RowMapper<Outlier> rowMapper) {
+    return jdbcTemplate
+        .getJdbcTemplate()
+        .execute(
+            (ConnectionCallback<List<Outlier>>)
+                con -> {
+                  boolean autoCommit = con.getAutoCommit();
+                  con.setAutoCommit(false);
+                  try (Statement statement = con.createStatement()) {
+                    statement.execute(
+                        "set local enable_mergejoin = off; set local enable_nestloop = off;");
+                    return new NamedParameterJdbcTemplate(new SingleConnectionDataSource(con, true))
+                        .query(sql, params, rowMapper);
+                  } finally {
+                    con.rollback();
+                    con.setAutoCommit(autoCommit);
+                  }
+                });
   }
 
   public List<ExecutionPlan> getExecutionPlans(OutlierRequest request) {
